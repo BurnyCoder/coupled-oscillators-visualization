@@ -1,0 +1,354 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Coupled Oscillators</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            margin: 0;
+            background-color: #111827; /* bg-gray-900 */
+            color: #f3f4f6; /* text-gray-100 */
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            overflow: hidden; /* Hide scrollbars from body */
+        }
+        .container {
+            background-color: #1f2937; /* bg-gray-800 */
+            padding: 20px;
+            border-radius: 12px;
+            box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1), 0 4px 6px -2px rgba(0,0,0,0.05);
+            width: 90%;
+            max-width: 800px;
+            text-align: center;
+        }
+        canvas {
+            display: block;
+            background-color: #374151; /* bg-gray-700 */
+            border-radius: 8px;
+            margin: 20px auto;
+            /* width and height will be set by JS to be responsive */
+        }
+        .controls {
+            margin-top: 20px;
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            gap: 15px;
+            align-items: center;
+        }
+        .control-group {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            color: #d1d5db; /* text-gray-300 */
+        }
+        .control-group label {
+            margin-bottom: 5px;
+            font-size: 0.9em;
+        }
+        .control-group input[type="range"] {
+            width: 120px;
+            cursor: pointer;
+        }
+        .control-group input[type="number"] {
+            width: 70px;
+            padding: 5px;
+            border-radius: 4px;
+            border: 1px solid #4b5563; /* border-gray-600 */
+            background-color: #374151; /* bg-gray-700 */
+            color: #f3f4f6; /* text-gray-100 */
+            text-align: center;
+        }
+        .control-group button {
+            padding: 8px 15px;
+            border-radius: 6px;
+            background-color: #3b82f6; /* bg-blue-500 */
+            color: white;
+            border: none;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+        .control-group button:hover {
+            background-color: #2563eb; /* bg-blue-600 */
+        }
+        #messageBox {
+            position: fixed;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background-color: #ef4444; /* bg-red-500 */
+            color: white;
+            padding: 10px 20px;
+            border-radius: 6px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            z-index: 1000;
+            display: none; /* Hidden by default */
+            font-size: 0.9em;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1 class="text-2xl font-semibold mb-4 text-white">Coupled Oscillators Simulation</h1>
+        <p class="text-sm text-gray-400 mb-6">
+            Observe how oscillators with different initial frequencies influence each other and synchronize over time.
+            Each circle's brightness represents its current phase.
+        </p>
+        <canvas id="oscillatorCanvas"></canvas>
+        <div class="controls">
+            <div class="control-group">
+                <label for="numOscillators">Oscillators: <span id="numOscillatorsValue">10</span></label>
+                <input type="range" id="numOscillators" min="2" max="50" value="10">
+            </div>
+            <div class="control-group">
+                <label for="couplingStrength">Coupling: <span id="couplingStrengthValue">0.05</span></label>
+                <input type="range" id="couplingStrength" min="0" max="0.2" step="0.001" value="0.05">
+            </div>
+            <div class="control-group">
+                <label for="baseFrequency">Base Freq: <span id="baseFrequencyValue">0.02</span></label>
+                <input type="range" id="baseFrequency" min="0.005" max="0.1" step="0.001" value="0.02">
+            </div>
+             <div class="control-group">
+                <label for="freqSpread">Freq Spread: <span id="freqSpreadValue">0.01</span></label>
+                <input type="range" id="freqSpread" min="0" max="0.05" step="0.001" value="0.01">
+            </div>
+            <div class="control-group">
+                <button id="resetButton">Reset Simulation</button>
+            </div>
+        </div>
+    </div>
+    <div id="messageBox">This is a message!</div>
+
+    <script>
+        // --- DOM Elements ---
+        const canvas = document.getElementById('oscillatorCanvas');
+        const ctx = canvas.getContext('2d');
+        const numOscillatorsSlider = document.getElementById('numOscillators');
+        const numOscillatorsValueDisplay = document.getElementById('numOscillatorsValue');
+        const couplingStrengthSlider = document.getElementById('couplingStrength');
+        const couplingStrengthValueDisplay = document.getElementById('couplingStrengthValue');
+        const baseFrequencySlider = document.getElementById('baseFrequency');
+        const baseFrequencyValueDisplay = document.getElementById('baseFrequencyValue');
+        const freqSpreadSlider = document.getElementById('freqSpread');
+        const freqSpreadValueDisplay = document.getElementById('freqSpreadValue');
+        const resetButton = document.getElementById('resetButton');
+        const messageBox = document.getElementById('messageBox');
+
+        // --- Simulation Parameters ---
+        let numOscillators = parseInt(numOscillatorsSlider.value);
+        let couplingStrength = parseFloat(couplingStrengthSlider.value);
+        let baseFrequency = parseFloat(baseFrequencySlider.value);
+        let freqSpread = parseFloat(freqSpreadSlider.value); // Max deviation from base frequency
+
+        let oscillators = [];
+        const OSCILLATOR_RADIUS = 15;
+        const PADDING = 30; // Padding around the oscillators grid
+
+        // --- Oscillator Class ---
+        class Oscillator {
+            constructor(x, y, naturalFrequency) {
+                this.x = x; // X position on canvas
+                this.y = y; // Y position on canvas
+                this.naturalFrequency = naturalFrequency; // Intrinsic oscillation speed
+                this.phase = Math.random() * 2 * Math.PI; // Initial random phase
+                this.radius = OSCILLATOR_RADIUS;
+            }
+
+            // Update phase based on natural frequency and coupling with others
+            update(others, globalCouplingStrength) {
+                let phaseInfluence = 0;
+                if (others.length > 1 && globalCouplingStrength > 0) {
+                    for (const other of others) {
+                        if (other !== this) {
+                            // Kuramoto model: d(phase)/dt = natural_freq + K/N * sum(sin(phase_j - phase_i))
+                            // Simplified: nudge towards the phase difference
+                            phaseInfluence += Math.sin(other.phase - this.phase);
+                        }
+                    }
+                    // Average influence and apply coupling strength
+                    phaseInfluence = (globalCouplingStrength / (others.length -1) ) * phaseInfluence;
+                }
+                
+                this.phase += this.naturalFrequency + phaseInfluence;
+                this.phase %= (2 * Math.PI); // Keep phase within 0 to 2*PI
+            }
+
+            // Draw the oscillator on the canvas
+            draw(context) {
+                // Calculate brightness based on phase (0 to 1)
+                const brightness = (Math.sin(this.phase) + 1) / 2; // Normalized to 0-1
+                const intensity = Math.floor(brightness * 200) + 55; // Map to a grayscale value (55-255)
+                
+                context.beginPath();
+                context.arc(this.x, this.y, this.radius, 0, 2 * Math.PI);
+                context.fillStyle = `rgb(${intensity}, ${intensity}, ${intensity})`;
+                context.fill();
+                context.strokeStyle = `rgb(${intensity + 20 > 255 ? 255 : intensity+20}, ${intensity + 20 > 255 ? 255 : intensity+20}, ${intensity + 20 > 255 ? 255 : intensity+20})`;
+                context.lineWidth = 2;
+                context.stroke();
+            }
+        }
+
+        // --- Canvas and Oscillator Setup ---
+        function setupOscillators() {
+            oscillators = [];
+            const canvasWidth = canvas.width - 2 * PADDING;
+            const canvasHeight = canvas.height - 2 * PADDING;
+
+            // Determine grid layout (try to make it squarish)
+            let cols = Math.ceil(Math.sqrt(numOscillators));
+            let rows = Math.ceil(numOscillators / cols);
+            
+            // If only one row is needed and it makes sense, use it
+            if (numOscillators <= 5) { // Heuristic for preferring a single row for few items
+                 cols = numOscillators;
+                 rows = 1;
+            }
+
+
+            const xSpacing = cols > 1 ? canvasWidth / (cols -1) : canvasWidth; // Avoid division by zero if cols is 1
+            const ySpacing = rows > 1 ? canvasHeight / (rows -1) : canvasHeight; // Avoid division by zero if rows is 1
+            
+            let count = 0;
+            for (let i = 0; i < rows && count < numOscillators; i++) {
+                for (let j = 0; j < cols && count < numOscillators; j++) {
+                    const x = PADDING + (cols > 1 ? j * xSpacing : canvasWidth / 2);
+                    const y = PADDING + (rows > 1 ? i * ySpacing : canvasHeight / 2);
+                    
+                    // Assign a slightly different natural frequency to each oscillator
+                    const currentFreq = baseFrequency + (Math.random() - 0.5) * freqSpread * 2;
+                    oscillators.push(new Oscillator(x, y, currentFreq));
+                    count++;
+                }
+            }
+             // Adjust positions if only one oscillator to center it
+            if (numOscillators === 1 && oscillators.length === 1) {
+                oscillators[0].x = (canvasWidth / 2) + PADDING;
+                oscillators[0].y = (canvasHeight / 2) + PADDING;
+            }
+        }
+
+        // --- Animation Loop ---
+        function animate() {
+            // Clear the canvas
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // Update and draw each oscillator
+            for (const osc of oscillators) {
+                osc.update(oscillators, couplingStrength);
+            }
+            for (const osc of oscillators) {
+                osc.draw(ctx);
+            }
+
+            requestAnimationFrame(animate); // Request the next frame
+        }
+
+        // --- Responsive Canvas Size ---
+        function resizeCanvas() {
+            const container = document.querySelector('.container');
+            // Set canvas width to be responsive, fitting within the container, minus some padding
+            // Max canvas width can be container width - 40px (for padding inside container)
+            // Max canvas height can be a portion of viewport height or a fixed aspect ratio
+            const maxWidth = container.offsetWidth - 40; // 20px padding on each side of canvas
+            const desiredHeight = Math.min(window.innerHeight * 0.5, 400); // Example: 50% of viewport height, max 400px
+
+            canvas.width = maxWidth;
+            canvas.height = desiredHeight;
+            
+            // Re-initialize oscillators if canvas size changes significantly
+            // (or if they were never initialized)
+            if (oscillators.length === 0 || Math.abs(canvas.width - (oscillators[0]?.x * 2)) > 50 ) { // crude check
+                 setupOscillators();
+            } else { // If not re-initializing fully, at least update positions for minor resizes
+                 // This part is tricky, for now, we fully re-initialize.
+                 // A more sophisticated approach would be to scale positions.
+                 setupOscillators();
+            }
+        }
+        
+        // --- Event Listeners for Controls ---
+        numOscillatorsSlider.addEventListener('input', (e) => {
+            numOscillators = parseInt(e.target.value);
+            numOscillatorsValueDisplay.textContent = numOscillators;
+            // No live reset on slider drag for performance, user clicks reset
+        });
+
+        couplingStrengthSlider.addEventListener('input', (e) => {
+            couplingStrength = parseFloat(e.target.value);
+            couplingStrengthValueDisplay.textContent = couplingStrength.toFixed(3);
+        });
+
+        baseFrequencySlider.addEventListener('input', (e) => {
+            baseFrequency = parseFloat(e.target.value);
+            baseFrequencyValueDisplay.textContent = baseFrequency.toFixed(3);
+            // Update natural frequencies of existing oscillators or require reset
+            // For simplicity, we'll require a reset for this change to take full effect.
+        });
+        
+        freqSpreadSlider.addEventListener('input', (e) => {
+            freqSpread = parseFloat(e.target.value);
+            freqSpreadValueDisplay.textContent = freqSpread.toFixed(3);
+        });
+
+        resetButton.addEventListener('click', () => {
+            showMessage("Simulation Reset!", "info");
+            // Update display values from sliders one last time before reset
+            numOscillatorsValueDisplay.textContent = numOscillatorsSlider.value;
+            couplingStrengthValueDisplay.textContent = parseFloat(couplingStrengthSlider.value).toFixed(3);
+            baseFrequencyValueDisplay.textContent = parseFloat(baseFrequencySlider.value).toFixed(3);
+            freqSpreadValueDisplay.textContent = parseFloat(freqSpreadSlider.value).toFixed(3);
+
+            // Apply current slider values
+            numOscillators = parseInt(numOscillatorsSlider.value);
+            couplingStrength = parseFloat(couplingStrengthSlider.value);
+            baseFrequency = parseFloat(baseFrequencySlider.value);
+            freqSpread = parseFloat(freqSpreadSlider.value);
+            
+            resizeCanvas(); // This will call setupOscillators
+        });
+
+        // --- Message Box Functionality ---
+        function showMessage(text, type = 'info') { // type can be 'info', 'error', 'success'
+            messageBox.textContent = text;
+            messageBox.style.display = 'block';
+            if (type === 'error') {
+                messageBox.style.backgroundColor = '#ef4444'; // bg-red-500
+            } else if (type === 'success') {
+                messageBox.style.backgroundColor = '#22c55e'; // bg-green-500
+            } else {
+                messageBox.style.backgroundColor = '#3b82f6'; // bg-blue-500
+            }
+
+            setTimeout(() => {
+                messageBox.style.display = 'none';
+            }, 3000);
+        }
+
+        // --- Initialization ---
+        window.addEventListener('resize', resizeCanvas);
+
+        // Initial setup
+        // Set initial display values from sliders
+        numOscillatorsValueDisplay.textContent = numOscillatorsSlider.value;
+        couplingStrengthValueDisplay.textContent = parseFloat(couplingStrengthSlider.value).toFixed(3);
+        baseFrequencyValueDisplay.textContent = parseFloat(baseFrequencySlider.value).toFixed(3);
+        freqSpreadValueDisplay.textContent = parseFloat(freqSpreadSlider.value).toFixed(3);
+        
+        // Call resizeCanvas once on load to set initial size and setup oscillators
+        window.onload = function() {
+            resizeCanvas(); 
+            animate(); // Start the animation loop
+            showMessage("Simulation Started. Adjust controls and hit Reset.", "success");
+        };
+
+    </script>
+</body>
+</html>
